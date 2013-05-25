@@ -99,7 +99,7 @@ def get_logins(args, config):
     if args.save_passwords:
         master_pass = getpass("Enter master password: ")
 
-    logins = {}
+    logins = []
     for username in usernames:
         password = None
 
@@ -116,10 +116,12 @@ def get_logins(args, config):
             if args.save_passwords:
                 config["passwords"][username] = encrypt(password, master_pass)
 
-        logins[username] = password
+        if not username in config.get("extra", {}):
+          logins.append((username,password,[]))
+        else:
+          logins.append((username,password,config["extra"][username]))
 
     return logins
-
 
 def run_mlp(args):
     config = load_config()
@@ -130,13 +132,13 @@ def run_mlp(args):
     if not args.forgetful:
         save_config(config)
 
-    for username, password in logins.items():
+    for username, password, extra in logins:
         try:
             if args.dry:
                 launch_token = "not-a-real-token"
             else:
                 launch_token = do_login(username, password)
-            launch(launch_token, args)
+            launch(launch_token, args, extra)
         except LoginFailed as e:
             log.error("Login failed: %s", e)
             return 1

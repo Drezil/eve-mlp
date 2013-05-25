@@ -12,12 +12,14 @@ __version__ = "0.1.1"
 
 config_path = os.path.expanduser("~/.config/eve-mlp.conf")
 log = logging.getLogger(__name__)
+EULA_URL = "http://community.eveonline.com/support/policies/eve-eula/"
 
 
 def load_config():
     config = {
         "usernames": [],
         "passwords": {},
+        "extra": {},
     }
     try:
         config.update(json.loads(file(config_path).read()))
@@ -60,18 +62,25 @@ def decrypt(data, key):
         return None
 
 
-def launch(launch_token, args):
+def launch(launch_token, args, extra=[]):
     log.info("Launching eve")
     cmd = []
 
     # platform specific pre-binary bits
     if args.dry:
         cmd.append("echo")
-    if platform.system() == "Linux":
+
+    for i in extra[:-1]:
+      cmd.append(i)
+    if platform.system() == "Linux" and len(extra) == 0:
         cmd.append("wine")
 
     # run the app
-    cmd.append(os.path.join("bin", "ExeFile.exe"))
+    # wrap it with "" to account for spaces in path
+    if (len(extra) == 0):
+      cmd.append("\"" + os.path.join("bin", "ExeFile.exe"))
+    else:
+      cmd.append("\"" + os.path.join(extra[-1],"bin","ExeFile.exe") + "\"")
     cmd.append("/ssoToken=" + launch_token)
     cmd.append("/noconsole")
 
@@ -80,4 +89,5 @@ def launch(launch_token, args):
         cmd.append("/server:Singularity")
 
     # go!
+    print " ".join(cmd)
     return subprocess.Popen(" ".join(cmd), shell=True)

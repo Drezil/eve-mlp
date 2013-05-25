@@ -2,7 +2,7 @@ import requests
 from urlparse import urljoin
 import re
 import logging
-
+import common
 
 log = logging.getLogger(__name__)
 
@@ -48,22 +48,67 @@ def get_login_action_url(launcher_url):
 
     return action_url
 
+def query_user(args):
+  return raw_input(args);
 
 def submit_login(action_url, username, password):
     log.info("Submitting username / password")
+    session = requests.Session()
 
-    auth_result = requests.post(
+    auth_result = session.post(
         action_url,
         data={"UserName": username, "Password": password},
         verify=False,
     )
 
     if "<title>License Agreement Update</title>" in auth_result.text:
-        raise LoginFailed("Need to accept EULA")
-
+      print auth_result.text
+      print "\n\n"
+      print "EULA changed. Read it above or at: %s" % common.EULA_URL
+      eula_accept = query_user("Do you acceppt the EULA (y/n)?")
+      if eula_accept in ['y','Y']:
+          matches3 = re.search("action=\"([^\"]+)\".*\"eulaHash\".*?value=\"([^\"]+)\".*\"returnUrl\".*?value=\"([^\"]+)\"", auth_result.text);
+          if not matches3:
+              raise LoginFailed("You have to accept the EULA.");
+          log.debug("EULA-ACCEPT: hash: %s, return: %s" %(matches3.group(2),matches3.group(3)))
+          auth_result = session.post(
+            "https://login.eveonline.com"+matches3.group(1),
+            data={"eulaHash": matches3.group(2), "returnUrl": matches3.group(3)},
+            verify=False,
+          )
+      
     matches = re.search("#access_token=([^&]+)", auth_result.url)
     if not matches:
-        raise LoginFailed("Invalid username / password?")
+        #maybe char-challange
+        matches2 = re.search("/Account/Challenge\?([^\"]*)", auth_result.text)
+        if not matches2:
+            print auth_result.text+"\n\n"
+            raise LoginFailed("Invalid username / password?")
+        else:
+            char = query_user("Character Challenge for User %s. Name one Character on this Account: " % username)
+            challenge_result = session.post(
+                 "https://login.eveonline.com/Account/Challenge?"+matches2.group(1),
+                 data={"Challenge": char},
+                 verify=False,
+            )
+            if "<title>License Agreement Update</title>" in challenge_result.text:
+                print challenge_result.text
+                print "\n\n"
+                print "EULA changed. Read it above or at: %s" % common.EULA_URL
+                eula_accept = query_user("Do you acceppt the EULA (y/n)?")
+                if eula_accept in ['y','Y']:
+                    matches3 = re.search("action=\"([^\"]+)\".*\"eulaHash\".*?value=\"([^\"]+)\".*\"returnUrl\".*?value=\"([^\"]+)\"", challenge_result.text);
+                    if not matches3:
+                        raise LoginFailed("You have to accept the EULA.");
+                    #TODO: returnUrl seems to cause problems. Maybe HTML-Encode the string (as it seems not to be the case..)
+                    challenge_result = session.post(
+                      "https://login.eveonline.com/"+matches3.group(1),
+                      data={"eulaHash": matches3.group(2), "returnUrl": matches3.group(3)},
+                      verify=False,
+                    )
+            matches = re.search("#access_token=([^&]+)", challenge_result.url)
+            if not matches:
+              raise LoginFailed("Character-Challenge not successful. Aborting.")
     return matches.group(1)
 
 
